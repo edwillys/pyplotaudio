@@ -3,7 +3,7 @@ PyPlotAudio is a graphical audio analyzer based on QT5, soundfile, numpy and sci
 
 Python 3 is used.
 
-WAV files, test signals and sound device streams can be read and analyzed in real time.
+Audio files, test signals and sound device streams can be read and analyzed in real time.
 The user is able to tweak a few parameters and observe their influence in the spectrum 
 straight away.
 
@@ -42,8 +42,8 @@ from  pydub import AudioSegment
 import sys, time, os
 import gui
 from AudioAnalyzer import AudioAnalyzer
-
 from CustomFigCanvas import CustomFigCanvas
+import json
 
 class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
     """
@@ -60,6 +60,20 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         # constructors
         super(PyPlotAudio, self).__init__(parent)
         self.setupUi(self)
+        
+        # Menu bar
+        self.actionExit.triggered.connect(self.close)
+        self.actionAbout.triggered.connect(self.about)
+
+        # making tuning elements invisible
+        self.labelTuning.setVisible(False) , self.comboTuning.setVisible(False)
+        self.labelString1.setVisible(False), self.sliderStringUp1.setVisible(False), self.sliderStringDown1.setVisible(False)
+        self.labelString2.setVisible(False), self.sliderStringUp2.setVisible(False), self.sliderStringDown2.setVisible(False)
+        self.labelString3.setVisible(False), self.sliderStringUp3.setVisible(False), self.sliderStringDown3.setVisible(False)
+        self.labelString4.setVisible(False), self.sliderStringUp4.setVisible(False), self.sliderStringDown4.setVisible(False)
+        self.labelString5.setVisible(False), self.sliderStringUp5.setVisible(False), self.sliderStringDown5.setVisible(False)
+        self.labelString6.setVisible(False), self.sliderStringUp6.setVisible(False), self.sliderStringDown6.setVisible(False)
+        self.labelString7.setVisible(False), self.sliderStringUp7.setVisible(False), self.sliderStringDown7.setVisible(False)
         
         # set up status bar
         self.labelStatusPeak = []
@@ -110,10 +124,23 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             'shadows' : True
         }
 
+        self.SETTINGS_PATH = ".settings"
+        self.settings = {}
+        if not os.path.isfile(self.SETTINGS_PATH):
+            with open(self.SETTINGS_PATH, 'w') as fp:
+                json.dump(self.DEFAULT_VALUES, fp)
+                self.settings = self.DEFAULT_VALUES
+        else:
+            with open(self.SETTINGS_PATH, 'r') as fp:
+                self.settings = json.load(fp)
+                for key, val in self.DEFAULT_VALUES.items():
+                    if key not in self.settings:
+                        self.settings[key] = val
+
         # generic members
         self.runmode = 'none'
         self.test_data = []
-        self.testparam = self.DEFAULT_VALUES['testparam']
+        self.testparam = self.settings['testparam']
         self.alpha = 0.99 # time smoothing for stats
         self.cpu = 0.0
         self.cpupeak = 0.0
@@ -176,24 +203,43 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.btnPlayPause.clicked.connect(self.btn_play_pause)
 
         # set default values
-        self.combo_setindex_by_value(self.comboBlockSize, self.DEFAULT_VALUES['blocksize'])
-        self.combo_setindex_by_value(self.comboWindow, self.DEFAULT_VALUES['window'])
-        self.combo_setindex_by_value(self.comboFS, int(self.DEFAULT_VALUES['fs']))
-        self.combo_setindex_by_value(self.comboSmoothing, self.DEFAULT_VALUES['smooth'])
-        self.combo_setindex_by_value(self.comboAudioCh, self.DEFAULT_VALUES['audioch'])
-        self.combo_setindex_by_value(self.comboRunMode, self.DEFAULT_VALUES['runmode'])
-        self.dialOverlap.setValue(self.DEFAULT_VALUES['overlap'])
-        self.dialAverageTime.setValue(self.DEFAULT_VALUES['avgtime'])
-        self.dialNumberPeaks.setValue(self.DEFAULT_VALUES['npeaks'])
-        self.dialPeakThresh.setValue(self.DEFAULT_VALUES['peakthresh'])
-        self.dialInputGain.setValue(self.DEFAULT_VALUES['ingain'])
-        self.dialTestParam.setValue(self.DEFAULT_VALUES['testparam'])
-        self.checkboxPeaks.setChecked(self.DEFAULT_VALUES['peaks'])
-        self.checkboxShadows.setChecked(self.DEFAULT_VALUES['shadows'])
+        self.combo_setindex_by_value(self.comboBlockSize, self.settings['blocksize'])
+        self.combo_setindex_by_value(self.comboWindow, self.settings['window'])
+        self.combo_setindex_by_value(self.comboFS, int(self.settings['fs']))
+        self.combo_setindex_by_value(self.comboSmoothing, self.settings['smooth'])
+        self.combo_setindex_by_value(self.comboAudioCh, self.settings['audioch'])
+        self.combo_setindex_by_value(self.comboRunMode, self.settings['runmode'])
+        self.dialOverlap.setValue(self.settings['overlap'])
+        self.dialAverageTime.setValue(self.settings['avgtime'])
+        self.dialNumberPeaks.setValue(self.settings['npeaks'])
+        self.dialPeakThresh.setValue(self.settings['peakthresh'])
+        self.dialInputGain.setValue(self.settings['ingain'])
+        self.dialTestParam.setValue(self.settings['testparam'])
+        self.checkboxPeaks.setChecked(self.settings['peaks'])
+        self.checkboxShadows.setChecked(self.settings['shadows'])
 
         # select default device
         didi = self.pa.get_default_input_device_info()
         self.combo_setindex_by_value(self.comboAudioIF, str(didi['index']) + ':' + didi['name'])
+
+    def about(self):
+        """
+        Open about message box
+        """
+        msg = QMessageBox()
+        msg.setIcon(QMessageBox.Information)
+        about_text = \
+        "PyPlotAudio is a graphical audio analyzer based on QT5, soundfile, numpy and scipy." \
+        "\n\nAudio files, test signals and sound device streams can be read and analyzed in real time." \
+        "The user is able to tweak a few parameters and observe their influence in the spectrum " \
+        "straight away." \
+        "\n\nCopyright (c) 2020 Edgar Lubicz" \
+        
+        msg.setText(about_text)
+        msg.setWindowTitle("PyPlotAudio Version " + __version__)
+        #msg.setDetailedText("Version " + __version__)
+        msg.setStandardButtons(QMessageBox.Ok)
+        msg.exec()
 
     def combo_setindex_by_value(self, combo, value):
         """
@@ -246,15 +292,17 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
     def checkbox_peaks_changed(self):
         """
-        TODO
+        Callback for when the peaks checkbox is ticked
         """
         self.canvas.set_plot_properties(peaks=self.checkboxPeaks.isChecked())
+        self.settings["peaks"] = self.checkboxPeaks.isChecked()
     
     def checkbox_shadows_changed(self):
         """
-        TODO
+        Callback for when the shadows checkbox is ticked
         """
         self.canvas.set_plot_properties(shadows=self.checkboxShadows.isChecked())
+        self.settings["shadows"] = self.checkboxShadows.isChecked()
 
     def dial_overlap_changed(self):
         """
@@ -265,6 +313,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.labelOverlapValue.setText(str(self.dialOverlap.value()))
         self.aa.set_properties(overlap=self.overlap)
         self.update_test_data()
+        self.settings["overlap"] = self.overlap
     
     def dial_avg_changed(self):
         """
@@ -275,6 +324,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.labelAverageTimeValue.setText(str(self.dialAverageTime.value()))
         self.aa.set_properties(avgtime=self.avgtime)
         self.update_test_data()
+        self.settings["avgtime"] = self.avgtime
     
     def dial_npeaks_changed(self):
         """
@@ -285,6 +335,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.labelNumberPeaksValue.setText(str(self.dialNumberPeaks.value()))
         self.aa.set_properties(npeaks=self.npeaks)
         self.update_test_data()
+        self.settings["npeaks"] = self.npeaks
     
     def dial_peakthresh_changed(self):
         """
@@ -295,6 +346,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.labelPeakThreshValue.setText(str(self.dialPeakThresh.value()))
         self.aa.set_properties(peakthresh=self.peakthresh)
         self.update_test_data()
+        self.settings["peakthresh"] = self.peakthresh
 
     def dial_ingain_changed(self):
         """
@@ -305,6 +357,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.labelInputGainValue.setText(str(self.dialInputGain.value()))
         self.aa.set_properties(ingain=self.ingain)
         self.update_test_data()
+        self.settings["ingain"] = self.ingain
 
     def dial_testparam_changed(self):
         """
@@ -315,6 +368,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.testparam = self.dialTestParam.value()
         self.labelTestParamValue.setText(str(self.dialTestParam.value()))
         self.update_test_data()
+        self.settings["testparam"] = self.testparam
 
     def combo_blocksize_changed(self):
         """
@@ -326,6 +380,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.canvas.set_plot_properties(blocksize=self.blocksize)
         self.update_test_data()
         self.update_stream()
+        self.settings["blocksize"] = self.blocksize
 
     def combo_window_changed(self):
         """
@@ -335,6 +390,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.window = self.comboWindow.currentText().lower()
         self.aa.set_properties(window=self.window)
         self.update_test_data()
+        self.settings["window"] = self.window
 
     def combo_fs_changed(self):
         """
@@ -346,6 +402,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.canvas.set_plot_properties(fs=self.fs)
         self.update_test_data()
         self.update_stream()
+        self.settings["fs"] = self.fs
 
     def combo_smooth_changed(self):
         """
@@ -363,6 +420,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
                 self.smoothing /= float(den)
         self.aa.set_properties(smooth=self.smoothing)
         self.update_test_data()
+        self.settings["smooth"] = smooth
 
     def stream_callback(self, in_data, frame_count, time_info, flag):
         """
@@ -705,6 +763,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.comboFS.setEnabled(False)
             self.dialTestParam.setEnabled(False)
         self.update_test_data()
+        self.settings["runmode"] = rm
 
     def update_audioif(self):
         """
@@ -747,6 +806,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
                 #self.current_ch = ch
                 # TODO: fix this
                 self.current_ch = 0
+                self.settings["audioch"] = self.current_ch
         except:
             print("Failed to assign audio channel: " + self.comboAudioCh.currentText())
     
@@ -763,6 +823,9 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.stream.stop_stream()
             self.stream.close()
         self.pa.terminate()
+        # save settings
+        with open(self.SETTINGS_PATH, 'w') as fp:
+            json.dump(self.settings, fp)
         event.accept()
 
 def main():
