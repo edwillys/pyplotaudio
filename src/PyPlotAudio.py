@@ -29,18 +29,20 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Edgar Lubicz"
 
 from PyQt5 import QtCore, QtGui, QtWidgets
-from PyQt5.QtWidgets import QApplication, QFileDialog
+from PyQt5.QtWidgets import QApplication, QFileDialog, QMessageBox
 import numpy as np
 from scipy import signal
 import pyaudio
 import soundfile as sf
-import sys, time
+from  pydub import AudioSegment
+import sys, time, os
 import gui
 from AudioAnalyzer import AudioAnalyzer
+
 from CustomFigCanvas import CustomFigCanvas
 
 class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
@@ -60,6 +62,20 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.setupUi(self)
         
         # set up status bar
+        self.labelStatusPeak = []
+        for i in range(3):
+            self.labelStatusPeak.insert(0, QtWidgets.QLabel())
+            self.labelStatusPeak[0].setAlignment(QtCore.Qt.AlignLeft)
+            self.labelStatusPeak[0].setObjectName("labelStatusPeak" + str(i))
+            self.labelStatusPeak[0].setText("-Hz=-dB")
+            self.statusBar.addWidget(self.labelStatusPeak[0])
+            width = 145
+            geometry = self.labelStatusPeak[0].geometry()
+            geometry.setWidth(width)
+            self.labelStatusPeak[0].setGeometry(geometry)
+            self.labelStatusPeak[0].setMinimumWidth(width)
+            self.labelStatusPeak[0].setMaximumWidth(width)
+
         self.labelStatusFps = QtWidgets.QLabel()
         self.labelStatusFps.setAlignment(QtCore.Qt.AlignCenter)
         self.labelStatusFps.setObjectName("labelStatusFps")
@@ -80,17 +96,18 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.DEFAULT_VALUES = {
             'ingain':0.0,
             'blocksize':1024,
-            'fs':44100.0,
+            'fs':48000.0,
             'avgtime':0.0,
             'overlap':0.0,
             'npeaks':3,
             'peakthresh':-60,
             'smooth':'off',
-            'audioif':'default',
             'audioch':0,
             'window':'rectangular',
             'runmode':'wav',
-            'testparam' : 500
+            'testparam' : 500,
+            'peaks' : True,
+            'shadows' : True
         }
 
         # generic members
@@ -114,6 +131,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.wf_info = None
         self.wf = None
         self.nchannels = 1
+        self.converted_mp3 = []
 
         # wave slider
         self.wav_slider_moving = False
@@ -123,14 +141,18 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         # fill up audio IF combobox
         for i in range(self.pa.get_device_count()):
             info = self.pa.get_device_info_by_index(i)
-            if(info['maxInputChannels'] > 0):
+            if(info['maxInputChannels'] > 0 and info['maxOutputChannels'] > 0):
                 self.comboAudioIF.addItem(str(i) + ':' + info['name'])
-
+        
         # matplotlib handling
         self.last_nframes = 0
         self.canvas = CustomFigCanvas(size=(50, 50)) # TODO: un-hardcode this
         self.layoutContentMpl.addWidget(self.canvas, alignment=QtCore.Qt.AlignCenter)
         self.canvas.draw()
+
+        # connect checkboxes
+        self.checkboxPeaks.stateChanged.connect(self.checkbox_peaks_changed)
+        self.checkboxShadows.stateChanged.connect(self.checkbox_shadows_changed)
 
         # connect dial signals
         self.dialOverlap.valueChanged.connect(self.dial_overlap_changed)
@@ -148,7 +170,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.comboAudioIF.currentIndexChanged.connect(self.update_audioif)
         self.comboAudioCh.currentIndexChanged.connect(self.update_audioch)
         self.comboRunMode.currentIndexChanged.connect(self.update_runmode)
-
+        
         # connect buttons
         self.btnOpenTestFile.clicked.connect(self.btn_open_test_file)
         self.btnPlayPause.clicked.connect(self.btn_play_pause)
@@ -158,7 +180,6 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.combo_setindex_by_value(self.comboWindow, self.DEFAULT_VALUES['window'])
         self.combo_setindex_by_value(self.comboFS, int(self.DEFAULT_VALUES['fs']))
         self.combo_setindex_by_value(self.comboSmoothing, self.DEFAULT_VALUES['smooth'])
-        self.combo_setindex_by_value(self.comboAudioIF, self.DEFAULT_VALUES['audioif'])
         self.combo_setindex_by_value(self.comboAudioCh, self.DEFAULT_VALUES['audioch'])
         self.combo_setindex_by_value(self.comboRunMode, self.DEFAULT_VALUES['runmode'])
         self.dialOverlap.setValue(self.DEFAULT_VALUES['overlap'])
@@ -167,20 +188,35 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         self.dialPeakThresh.setValue(self.DEFAULT_VALUES['peakthresh'])
         self.dialInputGain.setValue(self.DEFAULT_VALUES['ingain'])
         self.dialTestParam.setValue(self.DEFAULT_VALUES['testparam'])
+        self.checkboxPeaks.setChecked(self.DEFAULT_VALUES['peaks'])
+        self.checkboxShadows.setChecked(self.DEFAULT_VALUES['shadows'])
+
+        # select default device
+        didi = self.pa.get_default_input_device_info()
+        self.combo_setindex_by_value(self.comboAudioIF, str(didi['index']) + ':' + didi['name'])
 
     def combo_setindex_by_value(self, combo, value):
         """
         Helper function for seting the index of a QComboBox
-        by an integer value that is contained in one of its
+        by an value that is contained in one of its
         items
 
         :param combo: A QComboBox object.
         :param value: An integer value
         """
+        # first try exact match
+        found = False
         for i in range(combo.count()):
-            if str(value) in combo.itemText(i).lower():
+            if str(value) == combo.itemText(i):
                 combo.setCurrentIndex(i)
+                found = True
                 break
+        # if not found, then try substring 
+        if not found:
+            for i in range(combo.count()):
+                if str(value) in combo.itemText(i).lower():
+                    combo.setCurrentIndex(i)
+                    break
 
     def slider_wav_onpress(self):
         """
@@ -207,6 +243,18 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         else:
             # no relevant WAV yet, go back to leftmost value
             self.sliderWavPlayer.setValue(self.sliderWavPlayer.minimum())
+
+    def checkbox_peaks_changed(self):
+        """
+        TODO
+        """
+        self.canvas.set_plot_properties(peaks=self.checkboxPeaks.isChecked())
+    
+    def checkbox_shadows_changed(self):
+        """
+        TODO
+        """
+        self.canvas.set_plot_properties(shadows=self.checkboxShadows.isChecked())
 
     def dial_overlap_changed(self):
         """
@@ -387,6 +435,12 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.labelStatusCpuPeak.setText("CPU(peak)=" + "{0:.1f}".format(self.cpupeak) + "%")
             self.labelStatusFps.setText("FPS=" + "{0:.1f}".format(fps))
             self.cpupeak = 0.0
+            for ind, lsp in enumerate(self.labelStatusPeak):
+                if ind < self.npeaks:
+                    lsp.setText("{0:.1f}".format(self.aa.peakx[ind]) + "Hz=" + 
+                        "{0:.1f}".format(self.aa.peaky[ind]) + "dB")
+                else:
+                    lsp.setText("-Hz=-dB")
 
         return (out_data, out_flag)
 
@@ -424,6 +478,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         if self.stream:
             print("Stopping stream")
             self.stream.stop_stream()
+            self.stream.close()
 
         if should_play:
             input = (self.runmode == 'stream')
@@ -445,8 +500,8 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
                 rate=int(self.fs),
                 input=input,
                 output=output,
-                #input_device_index=None,
-                #output_device_index=None,
+                input_device_index=self.audioif_ind,
+                output_device_index=self.audioif_ind,
                 frames_per_buffer=self.blocksize,
                 stream_callback=self.stream_callback
             )
@@ -479,7 +534,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             self.btnPlayPause.setText('Play')
             palette.setColor(role, QtGui.QColor('green'))
             self.btnPlayPause.setPalette(palette)
-            if self.runmode == 'stream':
+            if self.runmode == 'stream' or self.runmode == 'wav':
                 self.comboAudioIF.setEnabled(True)
                 self.comboAudioCh.setEnabled(True)
 
@@ -489,11 +544,15 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         is pressed.
         """
         if 'stream' == self.runmode or ('wav' == self.runmode and self.wf is not None):
-            # toggle GUI state of play/pause button
-            self.update_play_pause()
-            curr_mode = self.btnPlayPause.text().lower()
-            # force update stream
-            self.update_stream(force=self.toggle_playpause[curr_mode])
+            try:
+                curr_mode = self.btnPlayPause.text().lower()
+                self.update_stream(force=curr_mode)
+                # toggle GUI state of play/pause button
+                self.update_play_pause()
+                # force update stream
+            except Exception as e:
+                print("Failed to open stream ")
+                print(str(e))
 
     def btn_open_test_file(self):
         """
@@ -502,20 +561,47 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         """
         dlg = QFileDialog()
         dlg.setFileMode(QFileDialog.AnyFile)
-        dlg.setNameFilter("WAV files (*.wav)")
+        dlg.setNameFilters(["WAV files (*.wav)", 
+            "MP3 (*.mp3)", 
+            #"MP4 (*.mp4)", 
+            "FLAC (*.flac)", 
+            "OGG (*.ogg)",
+            "Other Audio Formats (*.AIFF *.AU *.RAW)"])
         if dlg.exec_():
-            filename = dlg.selectedFiles()
-            self.txtTestFile.setText(filename[0])
-            if self.wf is not None:
-                self.wf.close()
-            self.wf = sf.SoundFile(filename[0])
-            self.wf_info = sf.info(filename[0])
-            self.fs = sf.info(filename[0]).samplerate
-            self.combo_setindex_by_value(self.comboFS, self.fs)
-            self.aa.set_properties(fs=self.fs)
-            self.canvas.set_plot_properties(fs=self.fs)
-            self.sliderWavPlayer.setValue(self.sliderWavPlayer.minimum())
-            self.update_player_timelabel(0)
+            filename = dlg.selectedFiles()[0]
+            fname, ext = os.path.splitext(filename)
+            if ext.lower() == ".mp3":
+                try:
+                    print("Converting mp3 to wav")
+                    mp3 = filename
+                    filename = ""
+                    new_wav = fname + ".wav"
+                    if not os.path.isfile(new_wav):
+                        if new_wav not in self.converted_mp3:
+                            sound = AudioSegment.from_mp3(mp3)
+                            sound.export(new_wav, format="wav")
+                            self.converted_mp3 += [new_wav]
+                    filename = new_wav
+                except:
+                    msg = QMessageBox()
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setText("Could not convert mp3. Try installing ffmpeg")
+                    msg.setWindowTitle("Warning")
+                    #msg.setDetailedText("The details are as follows:")
+                    msg.setStandardButtons(QMessageBox.Ok)
+                    msg.exec()
+            if len(filename) > 0:
+                self.txtTestFile.setText(filename)
+                if self.wf is not None:
+                    self.wf.close()
+                self.wf = sf.SoundFile(filename)
+                self.wf_info = sf.info(filename)
+                self.fs = sf.info(filename).samplerate
+                self.combo_setindex_by_value(self.comboFS, self.fs)
+                self.aa.set_properties(fs=self.fs)
+                self.canvas.set_plot_properties(fs=self.fs)
+                self.sliderWavPlayer.setValue(self.sliderWavPlayer.minimum())
+                self.update_player_timelabel(0)
 
     def update_test_data(self):
         """
@@ -608,8 +694,8 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
                 self.dialTestParam.setEnabled(True)
         elif 'wav' in rm:
             self.runmode = 'wav'
-            self.comboAudioIF.setEnabled(False)
-            self.comboAudioCh.setEnabled(False)
+            self.comboAudioIF.setEnabled(True)
+            self.comboAudioCh.setEnabled(True)
             self.btnOpenTestFile.setEnabled(True)
             self.update_stream(force='pause')
             self.update_play_pause('play')
@@ -625,12 +711,20 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         Helper function for updating audio interface parameters based on
         user selection.
         """
+        audioif_name = self.comboAudioIF.currentText().split(':')[1]
         self.audioif_ind = int(self.comboAudioIF.currentText().split(':')[0])
+        info = self.pa.get_device_info_by_index(self.audioif_ind)
+        print("New Audio IF selected")
+        print("  Name: " + audioif_name)
+        print("  Sample Rate: " + str(info['defaultSampleRate']))
         # number of channels (input or output) dictated by the run mode
         if self.runmode=='wav':
-            numch = self.pa.get_device_info_by_index(self.audioif_ind)['maxOutputChannels']
+            numch = info['maxOutputChannels']
+            print("  Num Ch (output): " + str(numch))
         else:
-            numch = self.pa.get_device_info_by_index(self.audioif_ind)['maxInputChannels']
+            numch = info['maxInputChannels']
+            print("  Num Ch (input): " + str(numch))
+
         # update audio channels combo box
         prev_isplaying = self.is_playing
         self.is_playing = False
@@ -648,12 +742,28 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         """
         try:
             ch = int(self.comboAudioCh.currentText())
+            print("Current channel = " + str(ch))
             if ch > -1:
                 #self.current_ch = ch
                 # TODO: fix this
                 self.current_ch = 0
         except:
             print("Failed to assign audio channel: " + self.comboAudioCh.currentText())
+    
+    def closeEvent(self, event):
+        print ("Closing window")
+        for convmp3 in self.converted_mp3:
+            try:
+                os.remove(convmp3) 
+            except:
+                print("Failed to remove " + convmp3)
+        self.canvas.close_event()
+        if self.stream:
+            print("Stopping stream")
+            self.stream.stop_stream()
+            self.stream.close()
+        self.pa.terminate()
+        event.accept()
 
 def main():
     app = QApplication(sys.argv)
@@ -662,5 +772,5 @@ def main():
     app.exec_()
 
 if __name__ == '__main__':
-    sys.exit(main())
+    main()
     

@@ -3,7 +3,7 @@ CustomFigCanvas is a helper class for plotting matplotlib in realtime.
 
 Python 3 is used.
 
-This is largerly based on many StackOverflow links that I lost the account for.
+This is largely based on many StackOverflow links that I lost the account for.
 The main approach is to process an instance of Figure() instead of using 
 matplotlib.pyplot (aka plt). FuncAnimation is used for realtime and blit is turned
 on, as basically only the real time data changes (one exception is the blocksize).
@@ -14,7 +14,7 @@ There are two subplots. One for the time domain and the other for the frequency
 spectrum.
 
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 __author__ = "Edgar Lubicz"
 
 from matplotlib.figure import Figure
@@ -76,15 +76,34 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
         # create semilogx line for spectrum
         self.line_fft, = self.ax2.semilogx(self.xf, self.yf, '-', lw=2)
         
-        # peaks of FFT
+        # markers for peaks of FFT
         self.peaky = [-120] * self.npeaks
         self.peakx = [0] * self.npeaks
         self.line_peaksfft, = self.ax2.semilogx(self.peakx, self.peaky, 'ro', lw=2)
+
+        # marker "shadow" lines
+        # horizontal
+        self.line_hshadows = self.ax2.hlines(y = self.peaky,
+            xmin = [self.ax2.get_xlim()[0]] * self.npeaks, 
+            xmax = self.peakx, 
+            color='red',
+            #linestyle="dotted")
+            linestyle=(0, (1, 3)))
+        # vertical
+        self.line_vshadows = self.ax2.vlines(x = self.peakx,
+            ymin = [self.ax2.get_ylim()[0]] * self.npeaks, 
+            ymax = self.peaky,
+            color='red',
+            #linestyle="dotted")
+            linestyle=(0, (1, 3)))
         
+        self.plot_peaks = True
+        self.plot_shadows = True
+
         FigureCanvas.__init__(self, self.fig)
         FuncAnimation.__init__(self, self.fig, self.plot_callback, init_func=self.reset_plot, interval=40, blit=True)
 
-    def set_plot_properties(self, blocksize=None,fs=None):
+    def set_plot_properties(self, blocksize=None,fs=None, peaks=None, shadows = None):
         """
         Sets the properties for the plots.
         :param blocksize: length of the chunk in samples
@@ -97,6 +116,10 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
         if fs is not None:
             self.fs = fs
             refresh_plot = True
+        if peaks is not None:
+            self.plot_peaks = peaks
+        if shadows is not None:
+            self.plot_shadows = shadows
 
         if refresh_plot:
             print("Refreshing plot with:")
@@ -111,6 +134,7 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
             self.ax2.set_xlim(20.0, self.fs / 2.0)
             # force draw canvas
             self.should_redraw = True
+            
 
     def set_plot_data(self, y=None,yf=None,peakx=None,peaky=None):
         """
@@ -134,6 +158,8 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
         Animation callback function. Here we update all of the plotted
         curves according to the latest set data
         """
+        ret = [self.line, self.line_fft]
+
         if self.should_redraw:
             self.fig.canvas.draw()
             self.should_redraw = False
@@ -143,11 +169,26 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
         if len(self.xf) == len(self.yf) == int(self.blocksize/2)-1:
             self.line_fft.set_xdata(self.xf)
             self.line_fft.set_ydata(self.yf)
-        self.line_peaksfft.set_ydata(self.peaky)
-        self.line_peaksfft.set_xdata(self.peakx)
+        # peaks
+        if self.plot_peaks:
+            self.line_peaksfft.set_ydata(self.peaky)
+            self.line_peaksfft.set_xdata(self.peakx)
+            ret += [self.line_peaksfft]
+        # shadows
+        if self.plot_shadows:
+            xmin = self.ax2.get_xlim()[0]
+            ymin = self.ax2.get_ylim()[0]
+            # vertical shadows
+            segs = ([[x, ymin], [x, y]] for x, y in zip(self.peakx, self.peaky))
+            self.line_vshadows.set_segments(segs)
+            # horizontal shadows
+            segs = ([[xmin, y], [x, y]] for x, y in zip(self.peakx, self.peaky))
+            self.line_hshadows.set_segments(segs)
+            ret += [self.line_hshadows, self.line_vshadows]
+        
         self.frame_count += 1
           
-        return [self.line, self.line_fft, self.line_peaksfft]
+        return ret
 
     def reset_plot(self):
         """
@@ -157,4 +198,10 @@ class CustomFigCanvas(FigureCanvas, FuncAnimation):
         self.frame_count = 0
         self.start_time = time.time()
 
-        return [self.line, self.line_fft, self.line_peaksfft]
+        ret = [self.line, self.line_fft]
+        if self.plot_shadows:
+            ret += [self.line_hshadows, self.line_vshadows]
+        if self.plot_peaks:
+            ret += [self.line_peaksfft]
+
+        return ret
