@@ -40,6 +40,7 @@ import pyaudio
 import soundfile as sf
 from  pydub import AudioSegment
 import sys, time, os
+from os import path as osp
 import gui
 from AudioAnalyzer import AudioAnalyzer
 from CustomFigCanvas import CustomFigCanvas
@@ -126,7 +127,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
 
         self.SETTINGS_PATH = ".settings"
         self.settings = {}
-        if not os.path.isfile(self.SETTINGS_PATH):
+        if not osp.isfile(self.SETTINGS_PATH):
             with open(self.SETTINGS_PATH, 'w') as fp:
                 json.dump(self.DEFAULT_VALUES, fp)
                 self.settings = self.DEFAULT_VALUES
@@ -168,7 +169,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
         # fill up audio IF combobox
         for i in range(self.pa.get_device_count()):
             info = self.pa.get_device_info_by_index(i)
-            if(info['maxInputChannels'] > 0 and info['maxOutputChannels'] > 0):
+            if(info['maxInputChannels'] > 0 or info['maxOutputChannels'] > 0):
                 self.comboAudioIF.addItem(str(i) + ':' + info['name'])
         
         # matplotlib handling
@@ -627,14 +628,14 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
             "Other Audio Formats (*.AIFF *.AU *.RAW)"])
         if dlg.exec_():
             filename = dlg.selectedFiles()[0]
-            fname, ext = os.path.splitext(filename)
+            fname, ext = osp.splitext(filename)
             if ext.lower() == ".mp3":
                 try:
                     print("Converting mp3 to wav")
                     mp3 = filename
                     filename = ""
                     new_wav = fname + ".wav"
-                    if not os.path.isfile(new_wav):
+                    if not osp.isfile(new_wav):
                         if new_wav not in self.converted_mp3:
                             sound = AudioSegment.from_mp3(mp3)
                             sound.export(new_wav, format="wav")
@@ -649,7 +650,7 @@ class PyPlotAudio(QtWidgets.QMainWindow, gui.Ui_MainWindow):
                     msg.setStandardButtons(QMessageBox.Ok)
                     msg.exec()
             if len(filename) > 0:
-                self.txtTestFile.setText(filename)
+                self.txtTestFile.setText(osp.basename(filename))
                 if self.wf is not None:
                     self.wf.close()
                 self.wf = sf.SoundFile(filename)

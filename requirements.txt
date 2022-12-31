@@ -1,8 +1,8 @@
-matplotlib==3.1.2
-numpy==1.18.0
-PyQt5==5.14.0
-PyQt5-sip==12.7.0
-scipy==1.4.1
-SoundFile==0.10.3.post1
-PyAudio==0.2.11
-pydub==0.23.1
+matplotlib==3.5.2
+numpy==1.24.1
+PyQt5==5.15.7
+PyQt5-sip==12.11.0
+scipy==1.9.3
+SoundFile==0.11.0
+PyAudio==0.2.13
+pydub==0.25.1

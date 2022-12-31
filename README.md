@@ -2,7 +2,7 @@
 
 PyPlotAudio is a graphical audio analyzer based on QT5, soundfile, numpy and scipy.
 
-It was developped using Python 3(.6.9), however, it should work on later versions, at least up to 3.9.x. PyQt5 doesn't work with python 3.10 and up, as of today (December 2022).
+It was developed using Python 3(.9.10), however, it should work on later versions, at least up to the latest 3.9.x. PyQt5 doesn't work with python 3.10 and up, as of today (December 2022).
 
 The dependencies are listed in the requirements.txt and can be installed with pip.
 
@@ -11,6 +11,8 @@ The user is able to tweak a few parameters and observe their influence in the sp
 straight away.
 
 ## GUI
+
+![Alt text](img/screenshot.png)
 
 The GUI is done on PyQt5 Designer. For converting into the respective python file:
 
@@ -27,5 +29,5 @@ python src/AudioAnalyzer.py
 
 ## TODO:
 - Overlap
-- Strech plot when resizing window
+- Stretch plot and other widgets when resizing a window
 - Better soundcard handling, as now only channel 0 is used
